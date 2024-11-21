@@ -2,77 +2,10 @@ import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 from PIL import Image, ImageTk
 import os
-
+from hide import HideImage, HideAudio 
+from unhide import UnhideImage, UnhideAudio
 import cv2
 import numpy as np
-
-def extract_text_lsb(image_path):
-    # Load the stego image
-    image = cv2.imread(image_path)
-    if image is None:
-        raise ValueError("Image not found. Check the path.")
-    
-    # Flatten the image to access all pixels
-    flat_image = image.flatten()
-    
-    # Extract the least significant bits (LSB) from each pixel
-    binary_message = ''.join(str(flat_image[i] & 1) for i in range(len(flat_image)))
-    
-    # Convert binary data to characters until the delimiter (00000000) is found
-    chars = [binary_message[i:i+8] for i in range(0, len(binary_message), 8)]
-    
-    # Stop at the delimiter (00000000) and reconstruct the message
-    message = ''
-    for char in chars:
-        if char == '00000000':  # This is the delimiter, so stop
-            break
-        message += chr(int(char, 2))  # Convert binary to character
-    
-    return message
-def embed_text_lsb(image_path, output_path, message):
-    # Load the image
-    image = cv2.imread(image_path)
-    if image is None:
-        raise ValueError("Image not found. Check the path.")
-    
-    # Convert the message to binary (8 bits per character)
-    binary_message = ''.join(format(ord(char), '08b') for char in message) + '00000000'  # Add delimiter
-    message_len = len(binary_message)
-    
-    # Flatten the image to access all pixels
-    flat_image = image.flatten().astype(np.int16)  # Use int16 to handle larger range during processing
-    
-    if message_len > len(flat_image):
-        raise ValueError("Message is too long to fit in the image.")
-    
-    # Embed the message
-    for i in range(message_len):
-        # Get the original pixel value
-        original_pixel = flat_image[i]
-        
-        # Clear the LSB (set to 0)
-        original_pixel &= ~1  # This clears the LSB
-        
-        # Ensure the value stays within int16 range before embedding message
-        original_pixel = np.clip(original_pixel, -32768, 32767)
-        
-        # Set the LSB to the message bit
-        message_bit = int(binary_message[i])
-        modified_pixel = original_pixel | message_bit
-        
-        # Ensure the modified pixel is within the valid int16 range before clipping
-        modified_pixel = np.clip(modified_pixel, -32768, 32767)
-        
-        # Update the flat_image with the modified pixel
-        flat_image[i] = modified_pixel
-    
-    # After processing, clip to uint8 range (0-255) and reshape the image
-    flat_image = np.clip(flat_image, 0, 255).astype(np.uint8)
-    stego_image = flat_image.reshape(image.shape)
-    
-    # Save the stego image
-    cv2.imwrite(output_path, stego_image)
-    print(f"Message embedded successfully in {output_path}")
 
 # Function to update file format label based on the selected file type
 def update_file_format_label(file_type_var, file_path_label, file_path_var, file_format_label):
@@ -101,9 +34,31 @@ def upload_file(file_type_var, file_path_label, file_path_var):
     else:
         file_path_var.set("No file uploaded")  # Clear the path if no file is selected
 
-
+def display_images(original_path, modified_path, display_frame): 
+    for widget in display_frame.winfo_children(): 
+        widget.destroy() 
+    original_image = Image.open(original_path) 
+    modified_image = Image.open(modified_path) 
+    original_image.thumbnail((300, 300)) 
+    modified_image.thumbnail((300, 300)) 
+    original_photo = ImageTk.PhotoImage(original_image) 
+    modified_photo = ImageTk.PhotoImage(modified_image) 
+    
+    original_label = ttk.Label(display_frame, text="Original File") 
+    original_label.pack(side="top", padx=10, pady=10) 
+    original_image_label = ttk.Label(display_frame, image=original_photo) 
+    original_image_label.image = original_photo 
+    original_image_label.pack(side="top", padx=10, pady=10) 
+    
+    modified_label = ttk.Label(display_frame, text="Modified File") 
+    modified_label.pack(side="top", padx=10, pady=10) 
+    modified_image_label = ttk.Label(display_frame, image=modified_photo) 
+    modified_image_label.image = modified_photo 
+    modified_image_label.pack(side="top", padx=10, pady=10)
+    
+    display_frame.pack(fill="both", expand=True)
 # Function to handle hide action
-def hide_action(file_path_var, file_type_var, text_area):
+def hide_action(file_path_var, file_type_var, text_area, display_frame):
     file_path = file_path_var.get()
     file_type = file_type_var.get()
     print(file_type)
@@ -124,18 +79,16 @@ def hide_action(file_path_var, file_type_var, text_area):
         title="Save Stego File"
     )
 
-    if not output_path:
-        messagebox.showwarning("Warning", "Save operation cancelled.")
-        return
-
-    try:
-        if file_type == "Image":
-            embed_text_lsb(file_path, output_path, text_to_hide)
-        # You can add additional logic for audio here if needed
-        messagebox.showinfo("Success", f"Data hidden and saved to {output_path} successfully!")
-    except Exception as e:
+    try: 
+        if file_type == "Image": 
+            image_hider = HideImage(file_path, output_path) 
+        else: 
+            hider = HideAudio(file_path, output_path) 
+        image_hider.embed_text_lsb(text_to_hide) 
+        messagebox.showinfo("Success", f"Data hidden and saved to {output_path} successfully!") 
+        display_images(file_path, output_path, display_frame)
+    except Exception as e: 
         messagebox.showerror("Error", f"An error occurred: {str(e)}")
-
 # Function to handle unhide action
 def unhide_action(file_path_var, file_type_var, result_box):
     file_path = file_path_var.get()
@@ -144,21 +97,19 @@ def unhide_action(file_path_var, file_type_var, result_box):
     if not file_path or file_path == "No file uploaded":
         messagebox.showerror("Error", f"Please upload an {file_type} file.")
         return
-    extracted_text=""
-    try:
-        if file_type == "Image":
-            extracted_text=extract_text_lsb(file_path)
-       
-    except Exception as e:
+    try: 
+        if file_type == "Image": 
+            unhider = UnhideImage(file_path) 
+        else: 
+            unhider = UnhideAudio(file_path) 
+        extracted_text = unhider.extract_text_lsb() 
+        result_box.config(state="normal") 
+        result_box.delete("1.0", tk.END) 
+        result_box.insert("1.0", extracted_text) 
+        result_box.config(state="disabled") 
+        messagebox.showinfo("Success", f"Data extracted from {file_path}!") 
+    except Exception as e: 
         messagebox.showerror("Error", f"An error occurred: {str(e)}")
-    # Your algorithm for extracting hidden data goes here
-    #extracted_text = "Sample extracted data"  # Replace with actual extraction logic
-    result_box.config(state="normal")
-    result_box.delete("1.0", tk.END)
-    result_box.insert("1.0", extracted_text)
-    result_box.config(state="disabled")
-    messagebox.showinfo("Success", f"Data extracted from {file_path}!")
-
 
 # Function to create a scrollable tab with specific content for hide and unhide
 def create_scrollable_tab(notebook, action):
@@ -230,7 +181,8 @@ def create_content(frame, action):
 
     file_format_label = ttk.Label(file_upload_frame, text="(*.png;*.jpg;*.jpeg)", foreground="gray", font=("Arial", 8))
     file_format_label.pack(side="right", padx=5)
-
+    display_frame = ttk.Frame(frame) 
+    
     # Text area for entering text to hide (for hide tab)
     if action == "Hide":
         text_area_frame = ttk.LabelFrame(frame, text="Text to Hide")
@@ -250,10 +202,10 @@ def create_content(frame, action):
         text_area.configure(yscrollcommand=text_scrollbar.set)
         
         hide_button = ttk.Button(
-            frame, text="Hide Data", command=lambda: hide_action(file_path_var, file_type_var, text_area)
+            frame, text="Hide Data", command=lambda: hide_action(file_path_var, file_type_var, text_area,display_frame)
         )
         hide_button.pack(pady=10)
-
+        display_frame.pack(fill="both", expand=True)
     # For unhide tab
     elif action == "Unhide":
         result_box_frame = ttk.LabelFrame(frame, text="Extracted Data")
