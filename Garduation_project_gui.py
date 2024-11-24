@@ -4,8 +4,6 @@ from PIL import Image, ImageTk
 import os
 from hide import HideImage, HideAudio 
 from unhide import UnhideImage, UnhideAudio
-import cv2
-import numpy as np
 
 # Function to update file format label based on the selected file type
 def update_file_format_label(file_type_var, file_path_label, file_path_var, file_format_label):
@@ -34,6 +32,7 @@ def upload_file(file_type_var, file_path_label, file_path_var):
     else:
         file_path_var.set("No file uploaded")  # Clear the path if no file is selected
 
+#Function to Display the original and modified files
 def display_images(original_path, modified_path, display_frame): 
     for widget in display_frame.winfo_children(): 
         widget.destroy() 
@@ -57,38 +56,41 @@ def display_images(original_path, modified_path, display_frame):
     modified_image_label.pack(side="top", padx=10, pady=10)
     
     display_frame.pack(fill="both", expand=True)
+
 # Function to handle hide action
 def hide_action(file_path_var, file_type_var, text_area, display_frame):
     file_path = file_path_var.get()
     file_type = file_type_var.get()
-    print(file_type)
-     
+
     if not file_path or file_path == "No file uploaded":
         messagebox.showerror("Error", f"Please upload an {file_type} file.")
         return
 
     text_to_hide = text_area.get("1.0", tk.END).strip()
-    
+
     if not text_to_hide:
         messagebox.showerror("Error", "Please enter text to hide.")
         return
-    # Ask the user where to save the output file
+
     output_path = filedialog.asksaveasfilename(
-        defaultextension=".png",  # Default file extension
+        defaultextension=".png" if file_type == "Image" else ".wav",
         filetypes=[("Image files", "*.png;*.jpg;*.jpeg;*.bmp")] if file_type == "Image" else [("Audio files", "*.wav")],
         title="Save Stego File"
     )
 
-    try: 
-        if file_type == "Image": 
-            image_hider = HideImage(file_path, output_path) 
-        else: 
-            hider = HideAudio(file_path, output_path) 
-        image_hider.embed_text_lsb(text_to_hide) 
-        messagebox.showinfo("Success", f"Data hidden and saved to {output_path} successfully!") 
-        display_images(file_path, output_path, display_frame)
-    except Exception as e: 
+    try:
+        if file_type == "Image":
+            image_hider = HideImage(file_path, output_path)
+            #image_hider.embed_text_lsb(text_to_hide)
+            image_hider.embed_text_pvd(text_to_hide)
+            display_images(file_path, output_path, display_frame)
+        else:
+            audio_hider = HideAudio(file_path, output_path)
+            audio_hider.embed_text_lsb(text_to_hide)
+            messagebox.showinfo("Success", f"Data hidden and saved to {output_path} successfully!")
+    except Exception as e:
         messagebox.showerror("Error", f"An error occurred: {str(e)}")
+
 # Function to handle unhide action
 def unhide_action(file_path_var, file_type_var, result_box):
     file_path = file_path_var.get()
@@ -97,18 +99,22 @@ def unhide_action(file_path_var, file_type_var, result_box):
     if not file_path or file_path == "No file uploaded":
         messagebox.showerror("Error", f"Please upload an {file_type} file.")
         return
-    try: 
-        if file_type == "Image": 
-            unhider = UnhideImage(file_path) 
-        else: 
-            unhider = UnhideAudio(file_path) 
-        extracted_text = unhider.extract_text_lsb() 
-        result_box.config(state="normal") 
-        result_box.delete("1.0", tk.END) 
-        result_box.insert("1.0", extracted_text) 
-        result_box.config(state="disabled") 
-        messagebox.showinfo("Success", f"Data extracted from {file_path}!") 
-    except Exception as e: 
+
+    try:
+        if file_type == "Image":
+            unhider = UnhideImage(file_path)
+            #extracted_text = unhider.extract_text_lsb()
+            extracted_text = unhider.extract_text_pvd()
+        else:
+            unhider = UnhideAudio(file_path)
+            extracted_text = unhider.extract_text_lsb()
+
+        result_box.config(state="normal")
+        result_box.delete("1.0", tk.END)
+        result_box.insert("1.0", extracted_text)
+        result_box.config(state="disabled")
+        messagebox.showinfo("Success", f"Data extracted from {file_path}!")
+    except Exception as e:
         messagebox.showerror("Error", f"An error occurred: {str(e)}")
 
 # Function to create a scrollable tab with specific content for hide and unhide
