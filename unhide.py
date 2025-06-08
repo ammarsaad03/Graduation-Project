@@ -30,8 +30,6 @@ class UnhideImage:
         stego_image = Image.open(self.image_path)
         pixels = np.array(stego_image, dtype=np.int32)
     
-        binary_message = ''  # This will store the binary message extracted from the image
-    
         # Determine image dimensions
         if len(pixels.shape) == 2:  # Grayscale image
             rows, cols = pixels.shape
@@ -39,28 +37,60 @@ class UnhideImage:
         else:  # Color image
             rows, cols, channels = pixels.shape
     
+        binary_message = ''
+    
+        # First extract 32 bits for length prefix
+        length_bits_collected = 0
+        message_length = None  # in bits
+    
         for channel in range(channels):
             channel_data = pixels if channels == 1 else pixels[:, :, channel]
     
             for row in range(rows):
                 for col in range(0, cols - 1, 2):
-                    # Get the pixel pair
                     p1 = channel_data[row, col]
                     p2 = channel_data[row, col + 1]
                     diff = abs(p1 - p2)
-    
-                    # Determine the embedding capacity (bit count) for this pixel pair
                     bit_capacity = get_capacity(diff)
-    
-                    # Extract the bits based on the capacity
                     embedded_bits = format(diff, f'0{bit_capacity}b')
-                    binary_message += embedded_bits
     
-                    # Check for the end marker ('11111110') and stop extracting if found
-                    if binary_message.endswith('11111110'):
-                        binary_message = binary_message[:-8]  # Remove the end marker
+                    if message_length is None:
+                        # Collect length prefix first
+                        needed = 32 - length_bits_collected
+                        if bit_capacity <= needed:
+                            length_bits_collected += bit_capacity
+                            length_prefix_part = embedded_bits
+                            binary_message += length_prefix_part
+                        else:
+                            # Split bits between length prefix and message
+                            length_prefix_part = embedded_bits[:needed]
+                            binary_message += length_prefix_part
+                            message_length = int(binary_message, 2)
+                            # Start collecting message bits from remainder
+                            message_bits_part = embedded_bits[needed:]
+                            binary_message = ''  # Reset for message bits
+                            binary_message += message_bits_part
+                            length_bits_collected = 32
+                            continue  # continue embedding message bits
+                        if length_bits_collected == 32:
+                            message_length = int(binary_message, 2)
+                            binary_message = ''
+                    else:
+                        binary_message += embedded_bits
+    
+                    # Stop if message bits collected equal length
+                    if message_length is not None and len(binary_message) >= message_length:
+                        binary_message = binary_message[:message_length]
                         extracted_message = bin_to_str(binary_message)
                         return extracted_message
+    
+        # If the loop finishes without return, decode whatever collected
+        if message_length is not None:
+            binary_message = binary_message[:message_length]
+            return bin_to_str(binary_message)
+        else:
+            return ''  # No message found
+
 class UnhideAudio:
     def __init__(self, audio_path):
         self.audio_path = audio_path

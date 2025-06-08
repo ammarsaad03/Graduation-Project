@@ -31,16 +31,22 @@ class HideImage:
             stego_image = flat_image.reshape(image.shape)
             cv2.imwrite(self.output_path, stego_image)
         except Exception as e:
-            raise ValueError(f"Error embedding text: {e}")    
-    
+            raise ValueError(f"Error embedding text: {e}") 
+
+    def get_stego_image(self):
+        # Return the stego image as a PIL Image object
+        return Image.open(self.output_path)
+
     # Function to encode a message into an image using PVD
     def embed_text_pvd(self, secret_message):
         # Load the image
         image = Image.open(self.image_path)
         pixels = np.array(image, dtype=np.int32)
     
-        # Convert the secret message to binary, with an end marker
-        binary_message = str_to_bin(secret_message) + '11111110'  # End marker
+        binary_msg = str_to_bin(secret_message)
+        length_prefix = format(len(binary_msg), '032b')
+        binary_message = length_prefix + binary_msg
+
         binary_index = 0
     
         # Determine image dimensions
@@ -99,7 +105,33 @@ class HideImage:
         # Save the stego image
         stego_image = Image.fromarray(pixels)
         stego_image.save(self.output_path)
-    
+
+    # New method to calculate max letters that can be hidden using PVD
+    def calculate_max_letters_pvd(self):
+        image = Image.open(self.image_path)
+        pixels = np.array(image, dtype=np.int32)
+
+        if len(pixels.shape) == 2:  # Grayscale image
+            rows, cols = pixels.shape
+            channels = 1
+        else:
+            rows, cols, channels = pixels.shape
+
+        total_bits = 0
+
+        for channel in range(channels):
+            channel_data = pixels if channels == 1 else pixels[:, :, channel]
+
+            for row in range(rows):
+                for col in range(0, cols - 1, 2):
+                    p1 = channel_data[row, col]
+                    p2 = channel_data[row, col + 1]
+                    diff = abs(p1 - p2)
+                    total_bits += get_capacity(diff)
+
+        max_letters = total_bits // 8  # 8 bits per letter
+        return max_letters
+
 
 class HideAudio:
     def __init__(self, audio_path, output_path):
