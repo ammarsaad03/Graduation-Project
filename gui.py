@@ -1,270 +1,192 @@
-import tkinter as tk
-from tkinter import ttk, filedialog, messagebox
-from PIL import Image, ImageTk
-import os
-from hide import HideImage, HideAudio 
+import streamlit as st
+from hide import HideImage, HideAudio
 from unhide import UnhideImage, UnhideAudio
+import os
+import cv2
+import wave
 
-# Function to update file format label based on the selected file type
-def update_file_format_label(file_type_var, file_path_label, file_path_var, file_format_label):
-    file_type = file_type_var.get()
-    file_path_label.config(text="No file uploaded")
-    file_path_var.set("No file uploaded")
-    if file_type == "Image":
-        file_format_label.config(text="(*.png;*.jpg;*.jpeg)")
-    elif file_type == "Audio":
-        file_format_label.config(text="(*.wav;*.mp3)")
-    file_format_label.focus_set()
-
-
-# Function to upload a file
-def upload_file(file_type_var, file_path_label, file_path_var):
-    file_type = file_type_var.get()
-    if file_type == "Image":
-        filetypes = [("Image files", "*.png;*.jpg;*.jpeg;*.bmp")]
-    elif file_type == "Audio":
-        filetypes = [("Audio files", "*.wav;*.mp3")]
-
-    file_path = filedialog.askopenfilename(filetypes=filetypes)
-    if file_path:
-        file_path_var.set(os.path.abspath(file_path))  # Save the path to the respective variable
-        file_path_label.config(text=os.path.abspath(file_path), image="")
-    else:
-        file_path_var.set("No file uploaded")  # Clear the path if no file is selected
-
-#Function to Display the original and modified files
-def display_images(original_path, modified_path, display_frame): 
-    for widget in display_frame.winfo_children(): 
-        widget.destroy() 
-    original_image = Image.open(original_path) 
-    modified_image = Image.open(modified_path) 
-    original_image.thumbnail((300, 300)) 
-    modified_image.thumbnail((300, 300)) 
-    original_photo = ImageTk.PhotoImage(original_image) 
-    modified_photo = ImageTk.PhotoImage(modified_image) 
-    
-    original_label = ttk.Label(display_frame, text="Original File") 
-    original_label.pack(side="top", padx=10, pady=10) 
-    original_image_label = ttk.Label(display_frame, image=original_photo) 
-    original_image_label.image = original_photo 
-    original_image_label.pack(side="top", padx=10, pady=10) 
-    
-    modified_label = ttk.Label(display_frame, text="Modified File") 
-    modified_label.pack(side="top", padx=10, pady=10) 
-    modified_image_label = ttk.Label(display_frame, image=modified_photo) 
-    modified_image_label.image = modified_photo 
-    modified_image_label.pack(side="top", padx=10, pady=10)
-    
-    display_frame.pack(fill="both", expand=True)
-
-# Function to handle hide action
-def hide_action(file_path_var, file_type_var, text_area, display_frame):
-    file_path = file_path_var.get()
-    file_type = file_type_var.get()
-
-    if not file_path or file_path == "No file uploaded":
-        messagebox.showerror("Error", f"Please upload an {file_type} file.")
-        return
-
-    text_to_hide = text_area.get("1.0", tk.END).strip()
-
-    if not text_to_hide:
-        messagebox.showerror("Error", "Please enter text to hide.")
-        return
-
-    output_path = filedialog.asksaveasfilename(
-        defaultextension=".png" if file_type == "Image" else ".wav",
-        filetypes=[("Image files", "*.png;*.jpg;*.jpeg;*.bmp")] if file_type == "Image" else [("Audio files", "*.wav")],
-        title="Save Stego File"
-    )
-
+# -------------------------------
+# Helpers to calculate max capacity
+# -------------------------------
+def max_capacity_image(image_path):
+    """Calculates the approximate max capacity of an image in bytes."""
     try:
-        if file_type == "Image":
-            image_hider = HideImage(file_path, output_path)
-            #image_hider.embed_text_lsb(text_to_hide)
-            image_hider.embed_text_pvd(text_to_hide)
-            display_images(file_path, output_path, display_frame)
-        else:
-            audio_hider = HideAudio(file_path, output_path)
-            audio_hider.embed_text_lsb(text_to_hide)
-            messagebox.showinfo("Success", f"Data hidden and saved to {output_path} successfully!")
-    except Exception as e:
-        messagebox.showerror("Error", f"An error occurred: {str(e)}")
+        image = cv2.imread(image_path)
+        if image is None:
+            return 0
+        height, width, channels = image.shape
+        # Using Pixel Value Differencing (PVD), capacity is complex.
+        # A rough estimate is around 15-20% of the total pixels in bytes.
+        # Let's provide a conservative estimate.
+        # This is a placeholder; a more accurate PVD capacity function would be complex.
+        return (height * width) // 8 # A very rough estimate in bytes
+    except Exception:
+        return 0
 
-# Function to handle unhide action
-def unhide_action(file_path_var, file_type_var, result_box):
-    file_path = file_path_var.get()
-    file_type = file_type_var.get()
-
-    if not file_path or file_path == "No file uploaded":
-        messagebox.showerror("Error", f"Please upload an {file_type} file.")
-        return
-
+def max_capacity_audio(audio_path):
+    """Calculates the max capacity of a WAV audio file in bytes for LSB."""
     try:
-        if file_type == "Image":
-            unhider = UnhideImage(file_path)
-            #extracted_text = unhider.extract_text_lsb()
-            extracted_text = unhider.extract_text_pvd()
-        else:
-            unhider = UnhideAudio(file_path)
-            extracted_text = unhider.extract_text_lsb()
+        with wave.open(audio_path, 'rb') as audio:
+            n_frames = audio.getnframes()
+            # 1 bit per frame, so n_frames / 8 bytes.
+            return n_frames // 8
+    except Exception:
+        return 0
 
-        result_box.config(state="normal")
-        result_box.delete("1.0", tk.END)
-        result_box.insert("1.0", extracted_text)
-        result_box.config(state="disabled")
-        messagebox.showinfo("Success", f"Data extracted from {file_path}!")
-    except Exception as e:
-        messagebox.showerror("Error", f"An error occurred: {str(e)}")
+# -------------------------------
+# Configuration
+# -------------------------------
+st.set_page_config(page_title="Steganography Assistant", layout="wide")
 
-# Function to create a scrollable tab with specific content for hide and unhide
-def create_scrollable_tab(notebook, action):
-    tab = ttk.Frame(notebook)
-    notebook.add(tab, text=f"{action} Data")
+# -------------------------------
+# Title and Branding
+# -------------------------------
+st.title("🔐 Steganography Assistant")
+st.caption("Securely hide and reveal messages in image or audio files using steganography.")
 
-    # Frame for scrollable content
-    scroll_frame = ttk.Frame(tab)
-    scroll_frame.pack(fill="both", expand=True)
+# -------------------------------
+# Chat Start
+# -------------------------------
+with st.chat_message("assistant"):
+    st.write("Hi there! 👋 How can I assist you today?")
+    process = st.radio("Choose an operation:", ["Hide a Message", "Unhide a Message"], index=None, key="main_op")
 
-    # Canvas for scrolling
-    canvas = tk.Canvas(scroll_frame)
-    canvas.pack(side="left", fill="both", expand=True)
+# -------------------------------
+# Process Handler
+# -------------------------------
+if process:
+    with st.chat_message("user"):
+        st.write(f"You selected: **{process}**")
 
-    # Vertical scrollbar
-    v_scrollbar = ttk.Scrollbar(scroll_frame, orient="vertical", command=canvas.yview)
-    v_scrollbar.pack(side="right", fill="y")
+    col1, col2 = st.columns([2, 3])
 
-    # Horizontal scrollbar
-    h_scrollbar = ttk.Scrollbar(tab, orient="horizontal", command=canvas.xview)
-    h_scrollbar.pack(side="bottom", fill="x")
+    if process == "Hide a Message":
+        with col1:
+            st.subheader("📁 Select Media Type")
+            media_type = st.radio("Choose where to hide the message:", ["Image", "Audio"], index=None, key="media_type_hide")
 
-    canvas.configure(yscrollcommand=v_scrollbar.set, xscrollcommand=h_scrollbar.set)
+        if media_type == "Image":
+            with col1:
+                st.subheader("🖼️ Upload an Image File")
+                uploaded_img = st.file_uploader("Supported formats: PNG (recommended), JPG", type=["png", "jpg", "jpeg"], key="img_uploader_hide")
 
-    # Frame inside canvas
-    scrollable_frame = ttk.Frame(canvas)
-    scrollable_frame.bind(
-        "<Configure>",
-        lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
-    )
-    canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
+            if uploaded_img:
+                # Save the uploaded image temporarily to disk for processing
+                original_path = "temp_uploaded_image.png"
+                with open(original_path, "wb") as f:
+                    f.write(uploaded_img.getbuffer())
 
-    # Add content specific to the action (Hide or Unhide)
-    create_content(scrollable_frame, action)
-    return tab
+                with col1:
+                    st.image(original_path, caption="Original Image", use_container_width=True)
+                    capacity = max_capacity_image(original_path)
+                    st.info(f"Estimated capacity: ~{capacity} characters.")
 
+                with col2:
+                    st.subheader("✉️ Enter Your Secret Message")
+                    message = st.text_area("Type the secret message:", height=150, key="msg_hide_img")
 
-# Function to add content to the hide and unhide tabs
-def create_content(frame, action):
-    file_type_var = tk.StringVar(value="Image")
-    file_path_var = tk.StringVar(value="No file uploaded")
+                    if st.button("Hide Message in Image"):
+                        if message: # Check if message is not empty
+                            output_path = "encoded_image.png"
+                            try:
+                                stego_img = HideImage(original_path, output_path)
+                                stego_img.embed_text_pvd(message) # Assumes PVD method from your lib
+                                st.success("✅ Message embedded successfully!")
 
-    # File type selection
-    file_type_frame = ttk.LabelFrame(frame, text="Choose File Type")
-    file_type_frame.pack(fill="x", padx=10, pady=5)
+                                # Show stego image and provide download
+                                st.image(output_path, caption="Stego Image (with hidden message)", use_container_width=True)
+                                with open(output_path, "rb") as f:
+                                    st.download_button("⬇️ Download Encoded Image", f, file_name="stego_image.png")
 
-    ttk.Radiobutton(file_type_frame, text="Image", variable=file_type_var,
-                    command=lambda: update_file_format_label(file_type_var, file_path_label, file_path_var, file_format_label),
-                    takefocus=False,
-                    value="Image").pack(side="left", padx=5, pady=5)
-    ttk.Radiobutton(file_type_frame, text="Audio", variable=file_type_var,
-                    command=lambda: update_file_format_label(file_type_var, file_path_label, file_path_var, file_format_label),
-                    takefocus=False,
-                    value="Audio").pack(side="left", padx=5, pady=5)
+                            except Exception as e:
+                                st.error(f"❌ An error occurred during encoding: {e}")
+                                st.warning("The message might be too long for this image. Try a shorter message or a larger image.")
+                        else:
+                            st.warning("⚠️ Please enter a message to hide.")
 
-    # File upload section
-    file_upload_frame = ttk.LabelFrame(frame, text="Upload File")
-    file_upload_frame.pack(fill="x", padx=10, pady=5)
+        elif media_type == "Audio":
+            with col1:
+                st.subheader("🎧 Upload an Audio File")
+                uploaded_audio = st.file_uploader("Supported formats: WAV (recommended)", type=["wav"], key="audio_uploader_hide")
 
-    file_path_label = ttk.Label(file_upload_frame, text="No file uploaded", relief="solid",width=40)
-    file_path_label.pack(side="left",fill="x", padx=10, pady=10, expand=True)
+            if uploaded_audio:
+                # Save the uploaded audio temporarily to disk for processing
+                original_audio_path = "temp_uploaded_audio.wav"
+                with open(original_audio_path, "wb") as f:
+                    f.write(uploaded_audio.getbuffer())
 
-    upload_button = ttk.Button(
-        file_upload_frame,
-        text="Upload File",
-        command=lambda: upload_file(file_type_var, file_path_label, file_path_var)
-    )
-    upload_button.pack(side="right", padx=10, pady=10)
+                with col1:
+                    st.audio(original_audio_path, format="audio/wav")
+                    capacity = max_capacity_audio(original_audio_path)
+                    st.info(f"File capacity: ~{capacity} characters.")
 
-    file_format_label = ttk.Label(file_upload_frame, text="(*.png;*.jpg;*.jpeg)", foreground="gray", font=("Arial", 8))
-    file_format_label.pack(side="right", padx=5)
-    display_frame = ttk.Frame(frame) 
-    
-    # Text area for entering text to hide (for hide tab)
-    if action == "Hide":
-        text_area_frame = ttk.LabelFrame(frame, text="Text to Hide")
-        text_area_frame.pack(fill="both", expand=True, padx=10, pady=5)
+                with col2:
+                    st.subheader("✉️ Enter Your Secret Message")
+                    message = st.text_area("Type the secret message:", height=150, key="msg_hide_audio")
 
-        # Frame for text area and scrollbar
-        text_area_container = ttk.Frame(text_area_frame)
-        text_area_container.pack(fill="both", expand=True, padx=10, pady=10)
+                    if st.button("Hide Message in Audio"):
+                        if message: # Check if message is not empty
+                            output_path = "encoded_audio.wav"
+                            try:
+                                stego_audio = HideAudio(original_audio_path, output_path)
+                                stego_audio.embed_text_lsb(message) # Assumes LSB method from your lib
+                                st.success("✅ Message successfully embedded into the audio.")
 
-        # Create a Text widget and attach a scrollbar
-        text_area = tk.Text(text_area_container, wrap="word", height=8)
-        text_area.pack(side="left", fill="both", expand=True)
+                                # Show stego audio and provide download
+                                st.audio(output_path, format="audio/wav")
+                                with open(output_path, "rb") as f:
+                                    st.download_button("⬇️ Download Encoded Audio", f, file_name="stego_audio.wav")
+                            except Exception as e:
+                                st.error(f"❌ An error occurred during encoding: {e}")
+                                st.warning("The message might be too long for this audio file. Try a shorter message or a longer audio file.")
 
-        text_scrollbar = ttk.Scrollbar(text_area_container, orient="vertical", command=text_area.yview)
-        text_scrollbar.pack(side="right", fill="y")
+                        else:
+                            st.warning("⚠️ Please enter a message to hide.")
 
-        text_area.configure(yscrollcommand=text_scrollbar.set)
-        
-        hide_button = ttk.Button(
-            frame, text="Hide Data", command=lambda: hide_action(file_path_var, file_type_var, text_area,display_frame)
-        )
-        hide_button.pack(pady=10)
-        display_frame.pack(fill="both", expand=True)
-    # For unhide tab
-    elif action == "Unhide":
-        result_box_frame = ttk.LabelFrame(frame, text="Extracted Data")
-        result_box_frame.pack(fill="both", expand=True, padx=10, pady=5)
+    elif process == "Unhide a Message":
+        with col1:
+            st.subheader("📁 Select Media Type")
+            media_type = st.radio("Choose file type to extract message from:", ["Image", "Audio"], index=None, key="media_type_unhide")
 
-        # Frame for result box and scrollbar
-        result_box_container = ttk.Frame(result_box_frame)
-        result_box_container.pack(fill="both", expand=True, padx=10, pady=10)
+        if media_type == "Image":
+            with col2:
+                st.subheader("🖼️ Upload Stego Image File")
+                uploaded_img = st.file_uploader("Upload the image containing a hidden message", type=["png", "jpg", "jpeg"], key="img_uploader_unhide")
 
-        # Create a Text widget and attach a scrollbar
-        result_box = tk.Text(result_box_container, wrap="word", height=8, state="disabled")
-        result_box.pack(side="left", fill="both", expand=True)
+                if uploaded_img:
+                    st.image(uploaded_img, caption="Uploaded Image", use_container_width=True)
 
-        result_scrollbar = ttk.Scrollbar(result_box_container, orient="vertical", command=result_box.yview)
-        result_scrollbar.pack(side="right", fill="y")
+                    if st.button("Reveal Message from Image"):
+                        try:
+                            # UnhideImage needs a file-like object or path
+                            # Giving it the uploaded_img object directly is often best
+                            extract_img = UnhideImage(uploaded_img)
+                            hidden_message = extract_img.extract_text_pvd()
 
-        result_box.configure(yscrollcommand=result_scrollbar.set)
-        
-        unhide_button = ttk.Button(
-            frame, text="Unhide Data", command=lambda: unhide_action(file_path_var, file_type_var, result_box)
-        )
-        unhide_button.pack(pady=10)
+                            with st.chat_message("assistant"):
+                                st.subheader("🕵️ Extracted Message")
+                                st.code(hidden_message, language=None)
+                        except Exception as e:
+                            st.error(f"❌ Failed to extract message: {e}")
+                            st.info("This could happen if no message is hidden, the file is corrupted, or the wrong method is used.")
 
+        elif media_type == "Audio":
+            with col2:
+                st.subheader("🎧 Upload Stego Audio File")
+                uploaded_audio = st.file_uploader("Upload the audio file containing a hidden message", type=["wav"], key="audio_uploader_unhide")
 
-# GUI Setup
-root = tk.Tk()
-root.title("Steganography Tool")
+                if uploaded_audio:
+                    st.audio(uploaded_audio)
 
-# Set window size and center the window
-window_width = 750
-window_height =450
-screen_width = root.winfo_screenwidth()
-screen_height = root.winfo_screenheight()
-x_offset = (screen_width - window_width) // 2
-y_offset = (screen_height - window_height) // 2
-root.geometry(f"{window_width}x{window_height}+{x_offset}+{y_offset}")
-style = ttk.Style()
-style.layout("TNotebook.Tab", [
-    ('Notebook.tab', {'sticky': 'w', 'children': [
-        ('Notebook.padding', {'side': 'top', 'sticky': 'w', 'children': [
-            ('Notebook.label', {'side': 'top', 'sticky': ''})
-        ]})
-    ]})
-])
+                    if st.button("Reveal Message from Audio"):
+                        try:
+                            # UnhideAudio needs a file-like object or path
+                            extract_audio = UnhideAudio(uploaded_audio)
+                            hidden_message = extract_audio.extract_text_lsb()
 
-# Optional: Customize tab colors
-style.configure("TNotebook.Tab", background="red", padding=(10, 5))
-# Notebook for Tabs
-notebook = ttk.Notebook(root)
-notebook.pack(expand=True, fill="both", padx=10, pady=10)
-
-# Create Tabs
-create_scrollable_tab(notebook, "Hide")
-create_scrollable_tab(notebook, "Unhide")
-
-root.mainloop()
+                            with st.chat_message("assistant"):
+                                st.subheader("🕵️ Extracted Message")
+                                st.code(hidden_message, language=None)
+                        except Exception as e:
+                            st.error(f"❌ Failed to extract message: {e}")
+                            st.info("This could happen if no message is hidden, the file is corrupted, or the wrong method is used.")
