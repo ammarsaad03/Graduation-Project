@@ -2,7 +2,7 @@ import wave
 import cv2
 from PIL import Image
 import numpy as np
-from operations import str_to_bin, get_capacity
+from operations import *
 
 class HideImage:
     def __init__(self, image_path, output_path):

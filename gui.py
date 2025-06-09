@@ -1,37 +1,13 @@
 import streamlit as st
 from hide import HideImage, HideAudio
 from unhide import UnhideImage, UnhideAudio
+from operations import *
 import os
 import cv2
 import wave
+import numpy as np
+import matplotlib.pyplot as plt
 
-# -------------------------------
-# Helpers to calculate max capacity
-# -------------------------------
-def max_capacity_image(image_path):
-    """Calculates the approximate max capacity of an image in bytes."""
-    try:
-        image = cv2.imread(image_path)
-        if image is None:
-            return 0
-        height, width, channels = image.shape
-        # Using Pixel Value Differencing (PVD), capacity is complex.
-        # A rough estimate is around 15-20% of the total pixels in bytes.
-        # Let's provide a conservative estimate.
-        # This is a placeholder; a more accurate PVD capacity function would be complex.
-        return (height * width) // 8 # A very rough estimate in bytes
-    except Exception:
-        return 0
-
-def max_capacity_audio(audio_path):
-    """Calculates the max capacity of a WAV audio file in bytes for LSB."""
-    try:
-        with wave.open(audio_path, 'rb') as audio:
-            n_frames = audio.getnframes()
-            # 1 bit per frame, so n_frames / 8 bytes.
-            return n_frames // 8
-    except Exception:
-        return 0
 
 # -------------------------------
 # Configuration
@@ -108,6 +84,10 @@ if process:
             with col1:
                 st.subheader("🎧 Upload an Audio File")
                 uploaded_audio = st.file_uploader("Supported formats: WAV (recommended)", type=["wav"], key="audio_uploader_hide")
+            if 'char_count_img' not in st.session_state:
+                st.session_state.char_count_img = 0
+            if 'char_count_audio' not in st.session_state:
+                st.session_state.char_count_audio = 0
 
             if uploaded_audio:
                 # Save the uploaded audio temporarily to disk for processing
@@ -122,8 +102,28 @@ if process:
 
                 with col2:
                     st.subheader("✉️ Enter Your Secret Message")
-                    message = st.text_area("Type the secret message:", height=150, key="msg_hide_audio")
-
+                    #message = st.text_area("Type the secret message:", height=150, key="msg_hide_audio")
+                    # Character counter
+                     # Create a container for the counter
+                    counter_placeholder = st.empty()
+                    
+                    def update_audio_count():
+                        st.session_state.char_count_audio = len(st.session_state.msg_hide_audio)
+                    
+                    message = st.text_area("Type the secret message:", 
+                                        height=150, 
+                                        key="msg_hide_audio",
+                                        on_change=update_audio_count)
+                    
+                    # Display counter immediately
+                    with counter_placeholder:
+                        count = st.session_state.char_count_audio
+                        if capacity > 0:
+                            if count <= capacity:
+                                st.caption(f"**{count}/{capacity}** characters")
+                            else:
+                                st.caption(f":red[**{count}/{capacity}** characters - Too long!]")
+                    
                     if st.button("Hide Message in Audio"):
                         if message: # Check if message is not empty
                             output_path = "encoded_audio.wav"
@@ -132,10 +132,15 @@ if process:
                                 stego_audio.embed_text_lsb(message) # Assumes LSB method from your lib
                                 st.success("✅ Message successfully embedded into the audio.")
 
+                                #Create the side-by-side visualization
+                                st.subheader("🔬 Waveform Comparison")
+                                
+                                # Create a figure with two subplots (1 row, 2 columns)
+                                fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 4), sharey=True)
+                                
                                 # Show stego audio and provide download
                                 st.audio(output_path, format="audio/wav")
-                                with open(output_path, "rb") as f:
-                                    st.download_button("⬇️ Download Encoded Audio", f, file_name="stego_audio.wav")
+                                
                             except Exception as e:
                                 st.error(f"❌ An error occurred during encoding: {e}")
                                 st.warning("The message might be too long for this audio file. Try a shorter message or a longer audio file.")
@@ -158,11 +163,9 @@ if process:
 
                     if st.button("Reveal Message from Image"):
                         try:
-                            # UnhideImage needs a file-like object or path
-                            # Giving it the uploaded_img object directly is often best
+                        
                             extract_img = UnhideImage(uploaded_img)
                             hidden_message = extract_img.extract_text_pvd()
-
                             with st.chat_message("assistant"):
                                 st.subheader("🕵️ Extracted Message")
                                 st.code(hidden_message, language=None)
@@ -186,7 +189,7 @@ if process:
 
                             with st.chat_message("assistant"):
                                 st.subheader("🕵️ Extracted Message")
-                                st.code(hidden_message, language=None)
+                                st.text_area("Hidden message:", value=hidden_message, height=100, disabled=True)
                         except Exception as e:
                             st.error(f"❌ Failed to extract message: {e}")
                             st.info("This could happen if no message is hidden, the file is corrupted, or the wrong method is used.")
